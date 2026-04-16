@@ -1,0 +1,42 @@
+# Python
+venv/
+instance/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.sqlite3
+*.db
+
+# Virtualenv / env files
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Node / React
+React_UI/react_ui/node_modules/
+React_UI/react_ui/dist/
+React_UI/react_ui/.vite/
+React_UI/react_ui/.turbo/
+
+# Build outputs
+build/
+dist/
+
+# Models and large artifacts (consider Git LFS)
+models/
+instance/models/
+*.h5
+*.save
+*.pkl
+
+# Misc
+coverage/
