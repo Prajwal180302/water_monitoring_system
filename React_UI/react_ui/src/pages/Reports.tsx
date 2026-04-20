@@ -11,16 +11,24 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
-  ScatterChart,
-  Scatter,
 } from "recharts";
 import { useState, useEffect } from 'react';
 import axiosInstance from '../api/axiosInstance';
 import { Download, Filter, X, HelpCircle } from 'lucide-react';
 import { Layout } from '../components/Layout';
+import { useAppSettings } from '../context/AppSettingsContext';
 
 interface ReportData {
   device_id?: string;
+  thresholds?: {
+    pH_min?: number;
+    pH_max?: number;
+    tds?: number;
+    turbidity?: number;
+    temperature_min?: number;
+    temperature_max?: number;
+    conductivity?: number;
+  };
   summary?: {
     pH?: { avg: number; min: number; max: number };
     TDS?: { avg: number; min: number; max: number };
@@ -36,7 +44,96 @@ interface ReportData {
   data?: any[];
 }
 
+const REPORT_TYPES = [
+  {
+    value: 'overview',
+    label: '📊 System Overview',
+    title: 'System Overview',
+    description: 'High-level summary of the latest water quality readings, averages, and system health.',
+    guidance: 'Use this to quickly understand overall performance before drilling into charts or alerts.',
+    icon: '📊',
+  },
+  {
+    value: 'quality',
+    label: '💧 Water Quality',
+    title: 'Water Quality Analysis',
+    description: 'Real sensor trends for pH, TDS, turbidity, temperature, and conductivity over time.',
+    guidance: 'Track parameter movement and compare current readings with the summary statistics shown above.',
+    icon: '💧',
+  },
+  {
+    value: 'trends',
+    label: '📈 Trends',
+    title: 'Trend Analysis',
+    description: 'Direction-based view showing whether each water parameter is increasing, decreasing, or stable.',
+    guidance: 'Useful for spotting drift and gradual changes before they become safety problems.',
+    icon: '📈',
+  },
+  {
+    value: 'safety',
+    label: '🛡️ Safety',
+    title: 'Safety Report',
+    description: 'Unsafe reading counts, safety percentage, and compliance status based on incoming measurements.',
+    guidance: 'Focus here when you need to review alerts, unsafe samples, and overall safety rate.',
+    icon: '🛡️',
+  },
+] as const;
+
+const formatMetric = (value?: number, digits = 2) =>
+  typeof value === 'number' ? value.toFixed(digits) : 'N/A';
+
+const PARAMETER_DETAILS: Record<string, { label: string; unit: string; axis: string }> = {
+  pH: { label: 'pH Level', unit: 'pH', axis: 'pH level (0-14)' },
+  tds: { label: 'TDS', unit: 'ppm', axis: 'TDS (ppm)' },
+  temperature: { label: 'Temperature', unit: '°C', axis: 'Temperature (°C)' },
+  turbidity: { label: 'Turbidity', unit: 'NTU', axis: 'Turbidity (NTU)' },
+  conductivity: { label: 'Conductivity', unit: 'µS/cm', axis: 'Conductivity (µS/cm)' },
+};
+
+const getParameterLabel = (key: string) => {
+  const detail = PARAMETER_DETAILS[key];
+  return detail ? `${detail.label}${detail.unit !== 'pH' ? ` (${detail.unit})` : ''}` : key;
+};
+
+const getReadingStatus = (reading: any, thresholds?: ReportData['thresholds']) => {
+  if (!reading) {
+    return { label: 'No live reading available yet.', tone: 'Waiting for sensor data.' };
+  }
+
+  const issues: string[] = [];
+  const activeThresholds = thresholds ?? {};
+
+  if (typeof reading.pH === 'number' && (reading.pH < (activeThresholds.pH_min ?? 6.5) || reading.pH > (activeThresholds.pH_max ?? 8.5))) {
+    issues.push('pH out of safe range');
+  }
+  if (typeof reading.tds === 'number' && reading.tds > (activeThresholds.tds ?? 500)) {
+    issues.push('high TDS');
+  }
+  if (typeof reading.turbidity === 'number' && reading.turbidity > (activeThresholds.turbidity ?? 1)) {
+    issues.push('high turbidity');
+  }
+  if (typeof reading.temperature === 'number' && (reading.temperature < (activeThresholds.temperature_min ?? 10) || reading.temperature > (activeThresholds.temperature_max ?? 25))) {
+    issues.push('temperature outside target');
+  }
+  if (typeof reading.conductivity === 'number' && reading.conductivity > (activeThresholds.conductivity ?? 1000)) {
+    issues.push('high conductivity');
+  }
+
+  if (issues.length === 0) {
+    return {
+      label: 'Current reading is within the normal operating range.',
+      tone: 'System looks stable right now.',
+    };
+  }
+
+  return {
+    label: `Current reading needs attention: ${issues.join(', ')}.`,
+    tone: 'Review the latest sample and confirm sensor conditions.',
+  };
+};
+
 export function Reports() {
+  const { settings } = useAppSettings();
   const [reportType, setReportType] = useState('overview');
   const [chartType, setChartType] = useState('line');
   const [reportData, setReportData] = useState<ReportData>({});
@@ -50,40 +147,47 @@ export function Reports() {
   const [timePreset, setTimePreset] = useState('all'); // all, 24h, 7d, 30d
   const [chartHeight, setChartHeight] = useState(450);
   const [phBoost, setPhBoost] = useState(false);
-  const [chartData, setChartData] = useState<any[]>([]);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState<string>('');
+  const activeThresholds = reportData.thresholds ?? settings.system.thresholds;
+
+  // Real-time data fetch function
+  const fetchReportData = async () => {
+    try {
+      setIsRefreshing(true);
+      const res = await axiosInstance.get("/reports");
+
+      setReportData(res.data);
+
+      const formatted = res.data.data.map((item: any) => ({
+        time: new Date(item.timestamp).toLocaleTimeString(),
+        pH: item.pH,
+        tds: item.tds,
+        turbidity: item.turbidity,
+        conductivity: item.conductivity,
+        temperature: item.temperature,
+      }));
+
+      formatted.sort(
+        (a: any, b: any) =>
+          new Date(a.time).getTime() - new Date(b.time).getTime()
+      );
+
+      setLastUpdate(new Date().toLocaleTimeString());
+    } catch (err) {
+      console.error("Report API ERROR:", err);
+      setReportData({});
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchReport = async () => {
-      try {
-        const res = await axiosInstance.get("/reports");
+    fetchReportData();
 
-// KEEP THIS
-setReportData(res.data);
-
-// 🔥 REPLACE chart logic with this
-const formatted = res.data.data.map((item: any) => ({
-  time: new Date(item.timestamp).toLocaleTimeString(),
-  pH: item.pH,
-  tds: item.tds,
-  turbidity: item.turbidity,
-  conductivity: item.conductivity,
-  temperature: item.temperature,
-}));
-
-// 🔥 VERY IMPORTANT (sort properly)
-formatted.sort(
-  (a: any, b: any) =>
-    new Date(a.time).getTime() - new Date(b.time).getTime()
-);
-
-setChartData(formatted);
-      } catch (err) {
-        console.error("Report API ERROR:", err);
-        setReportData({});
-      }
-    };
-
-    fetchReport();
+    // Real-time refresh every 10 seconds
+    const interval = setInterval(fetchReportData, 10000);
+    return () => clearInterval(interval);
   }, []);
 
   // Apply filters
@@ -151,62 +255,56 @@ setChartData(formatted);
   };
 
   const getReportContent = () => {
-    switch(reportType) {
+    const latestReading = filteredData.length > 0
+      ? filteredData[filteredData.length - 1]
+      : reportData.data?.[reportData.data.length - 1];
+    const latestTimestamp = latestReading?.timestamp
+      ? new Date(latestReading.timestamp).toLocaleString()
+      : null;
+    const safetyRate = typeof reportData.alerts?.safety_percentage === 'number'
+      ? `${reportData.alerts.safety_percentage.toFixed(1)}%`
+      : 'N/A';
+    const status = getReadingStatus(latestReading, activeThresholds);
+
+    switch (reportType) {
       case 'quality':
         return {
           title: 'Water Quality Analysis',
-          description: 'Detailed breakdown of all water quality parameters over time with trend analysis',
-          guidance: 'Monitor trends in pH, TDS, turbidity, temperature, and conductivity. Look for sudden spikes or dips that may indicate issues.',
-          icon: '💧'
-        };
-      case 'safety':
-        return {
-          title: 'Safety & Compliance Report',
-          description: 'Safety percentage, violations, and compliance metrics with detailed parameter breakdowns',
-          guidance: 'Focuses on safe vs unsafe readings. Safety percentage above 95% is recommended. Review violations by parameter.',
-          icon: '🛡️'
+          description: `Latest reading shows pH ${formatMetric(latestReading?.pH)}, TDS ${formatMetric(latestReading?.tds)}, turbidity ${formatMetric(latestReading?.turbidity)}, temperature ${formatMetric(latestReading?.temperature)}°C, and conductivity ${formatMetric(latestReading?.conductivity)}.`,
+          guidance: latestTimestamp
+            ? `${status.label} Sample captured at ${latestTimestamp}.`
+            : status.label,
+          icon: '💧',
         };
       case 'trends':
         return {
-          title: 'Trends & Anomalies Detection',
-          description: 'Identify patterns, trends, and potential anomalies in water quality data',
-          guidance: 'Use this report to spot unusual patterns. Red flags: sudden spikes/drops, repeated violations, drifting baseline values.',
-          icon: '📈'
+          title: 'Trend Analysis',
+          description: `Trend view starts from the latest sample: pH ${formatMetric(latestReading?.pH)}, turbidity ${formatMetric(latestReading?.turbidity)}, and conductivity ${formatMetric(latestReading?.conductivity)} are the current anchors.`,
+          guidance: `Compare this reading with previous points to see whether the system is rising, falling, or staying stable. ${status.tone}`,
+          icon: '📈',
         };
-      case 'daily':
+      case 'safety':
         return {
-          title: 'Daily Statistics Report',
-          description: 'Aggregated daily summaries showing min, max, and average values for each parameter',
-          guidance: 'Compare daily patterns to establish normal baseline. Early morning vs afternoon variations can be normal.',
-          icon: '📅'
-        };
-      case 'compliance':
-        return {
-          title: 'Regulatory Compliance Report',
-          description: 'Detailed compliance metrics against water quality standards (WHO/EPA guidelines)',
-          guidance: 'Ensures all readings meet safe drinking water standards. Track compliance percentage trend over time.',
-          icon: '✅'
-        };
-      case 'comparison':
-        return {
-          title: 'Parameter Comparison Analysis',
-          description: 'Compare relationships between different parameters and their correlations',
-          guidance: 'Identify how parameters influence each other (e.g., temperature effects on conductivity, pH impacts on safety).',
-          icon: '🔄'
+          title: 'Safety Report',
+          description: `Current safety rate is ${safetyRate}, with the newest reading showing pH ${formatMetric(latestReading?.pH)} and turbidity ${formatMetric(latestReading?.turbidity)}.`,
+          guidance: `${status.label} Use this report to verify unsafe readings and alert severity.`,
+          icon: '🛡️',
         };
       case 'overview':
       default:
         return {
           title: 'System Overview',
-          description: 'High-level summary of all metrics and system health with key performance indicators',
-          guidance: 'Start here for a quick assessment. Check min/max values to identify anomalies.',
-          icon: '📊'
+          description: `Current reading: pH ${formatMetric(latestReading?.pH)}, TDS ${formatMetric(latestReading?.tds)}, temperature ${formatMetric(latestReading?.temperature)}°C, turbidity ${formatMetric(latestReading?.turbidity)}, conductivity ${formatMetric(latestReading?.conductivity)}.`,
+          guidance: latestTimestamp
+            ? `${status.tone} Last sample recorded at ${latestTimestamp}.`
+            : status.tone,
+          icon: '📊',
         };
     }
   };
 
   const renderReportSpecificMetrics = () => {
-    if (reportType === 'safety' || reportType === 'compliance') {
+    if (reportType === 'safety') {
       return (
         <div className="mb-8 grid gap-5 lg:grid-cols-4">
           <div className="rounded-lg border border-green-200 dark:border-green-900 bg-green-50 dark:bg-green-950 p-4 shadow-sm">
@@ -278,35 +376,6 @@ setChartData(formatted);
       );
     }
 
-    if (reportType === 'comparison') {
-      return (
-        <div className="mb-8 grid gap-5 lg:grid-cols-2">
-          <div className="rounded-lg border border-purple-200 dark:border-purple-900 bg-purple-50 dark:bg-purple-950 p-4 shadow-sm">
-            <h4 className="font-semibold text-purple-900 dark:text-purple-100 mb-3">Parameter Ranges</h4>
-            <div className="space-y-2 text-sm">
-              {reportData.summary && Object.entries(reportData.summary).map(([key, stats]: [string, any]) => (
-                <div key={key} className="flex justify-between items-center">
-                  <span className="text-gray-700 dark:text-gray-300">{key}:</span>
-                  <span className="font-mono text-purple-600 dark:text-purple-300">
-                    {stats?.min?.toFixed(2)} - {stats?.max?.toFixed(2)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="rounded-lg border border-indigo-200 dark:border-indigo-900 bg-indigo-50 dark:bg-indigo-950 p-4 shadow-sm">
-            <h4 className="font-semibold text-indigo-900 dark:text-indigo-100 mb-3">Key Correlations</h4>
-            <div className="space-y-2 text-sm">
-              <p className="text-gray-700 dark:text-gray-300">🌡️ <span className="font-semibold">Temperature</span> affects conductivity</p>
-              <p className="text-gray-700 dark:text-gray-300">⚗️ <span className="font-semibold">pH</span> impacts mineral content (TDS)</p>
-              <p className="text-gray-700 dark:text-gray-300">💧 <span className="font-semibold">Turbidity</span> indicates contamination</p>
-              <p className="text-gray-700 dark:text-gray-300">⚡ <span className="font-semibold">Conductivity</span> shows dissolved minerals</p>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
     return null;
   };
 
@@ -357,17 +426,53 @@ setChartData(formatted);
       return {
         ...item,
         time: timeLabel,
+        sampleTime: date.toLocaleString(),
         name: date.toLocaleString(),
       };
     });
 
-    // For line/area charts, scale pH to make it visible
     const chartData = baseChartData.map(item => ({
       ...item,
-      pH_scaled: (item.pH || 0) * 10, // Scale pH for visibility (0-14 becomes 0-140)
+      pH: item.pH,
     }));
 
-    const commonMargin = { top: 20, right: 30, left: 10, bottom: 60 };
+    const commonMargin = { top: 24, right: 64, left: 42, bottom: 82 };
+    const timelineAxisLabel: any = {
+      value: 'Sample time',
+      position: 'insideBottom',
+      offset: -58,
+      style: { textAnchor: 'middle' as const, fill: '#374151', fontWeight: 700 },
+    };
+    const sensorAxisLabel: any = {
+      value: 'Sensor value (see legend units)',
+      angle: -90,
+      position: 'insideLeft',
+      offset: -28,
+      style: { textAnchor: 'middle' as const, fill: '#374151', fontWeight: 700 },
+    };
+    const phAxisLabel: any = {
+      value: 'pH level (0-14)',
+      angle: 90,
+      position: 'insideRight',
+      offset: -26,
+      style: { textAnchor: 'middle' as const, fill: '#7c3aed', fontWeight: 700 },
+    };
+    const formatTooltipValue = (value: any, name: any) => {
+      const seriesName = String(name).replace(/^[^\w]+ /, '').replace(' Level', '');
+      const key = seriesName.includes('pH') ? 'pH'
+        : seriesName.includes('TDS') ? 'tds'
+          : seriesName.includes('Temperature') ? 'temperature'
+            : seriesName.includes('Turbidity') ? 'turbidity'
+              : seriesName.includes('Conductivity') ? 'conductivity'
+                : '';
+      const detail = PARAMETER_DETAILS[key];
+      const formattedValue = typeof value === 'number' ? value.toFixed(2) : value;
+      return detail ? [`${formattedValue} ${detail.unit}`, detail.label] : [formattedValue, name];
+    };
+    const formatTooltipLabel = (_label: any, payload?: readonly any[]) => {
+      const sampleTime = payload?.[0]?.payload?.sampleTime;
+      return sampleTime ? `Sample time: ${sampleTime}` : 'Sample time';
+    };
 
     switch(chartType) {
       case 'area':
@@ -376,58 +481,90 @@ setChartData(formatted);
             <AreaChart data={chartData} margin={commonMargin}>
               <defs>
                 <linearGradient id="colorPH" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#a78bfa" stopOpacity={0.8}/>
-                  <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0.1}/>
+                  <stop offset="5%" stopColor="#a78bfa" stopOpacity={0.9}/>
+                  <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0.2}/>
                 </linearGradient>
                 <linearGradient id="colorTDS" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#60a5fa" stopOpacity={0.8}/>
-                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.1}/>
+                  <stop offset="5%" stopColor="#60a5fa" stopOpacity={0.9}/>
+                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.2}/>
                 </linearGradient>
                 <linearGradient id="colorTemp" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#fb923c" stopOpacity={0.8}/>
-                  <stop offset="95%" stopColor="#f97316" stopOpacity={0.1}/>
+                  <stop offset="5%" stopColor="#fb923c" stopOpacity={0.9}/>
+                  <stop offset="95%" stopColor="#f97316" stopOpacity={0.2}/>
                 </linearGradient>
-                <filter id="glow">
-                  <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+                <linearGradient id="colorTurbidity" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#22d3ee" stopOpacity={0.9}/>
+                  <stop offset="95%" stopColor="#06b6d4" stopOpacity={0.2}/>
+                </linearGradient>
+                <linearGradient id="colorConductivity" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#4ade80" stopOpacity={0.9}/>
+                  <stop offset="95%" stopColor="#22c55e" stopOpacity={0.2}/>
+                </linearGradient>
+                <filter id="areaGlow">
+                  <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
                   <feMerge>
                     <feMergeNode in="coloredBlur"/>
                     <feMergeNode in="SourceGraphic"/>
                   </feMerge>
                 </filter>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" strokeOpacity={0.3} />
-              <XAxis dataKey="time" angle={-45} textAnchor="end" height={100} tick={{ fontSize: 12, fill: '#4b5563' }} />
-              <YAxis tick={{ fontSize: 12, fill: '#4b5563' }} />
+              <CartesianGrid strokeDasharray="4 4" stroke="#e5e7eb" strokeOpacity={0.4} />
+              <XAxis 
+                dataKey="time" 
+                angle={-45} 
+                textAnchor="end" 
+                height={100} 
+                tick={{ fontSize: 12, fill: '#4b5563', fontWeight: '500' }} 
+                stroke="#d1d5db"
+                label={timelineAxisLabel}
+              />
+              <YAxis 
+                tick={{ fontSize: 12, fill: '#4b5563', fontWeight: '500' }} 
+                yAxisId="left"
+                stroke="#d1d5db"
+                label={sensorAxisLabel}
+              />
+              <YAxis 
+                yAxisId="right" 
+                orientation="right" 
+                tick={{ fontSize: 12, fill: '#a78bfa', fontWeight: '500' }}
+                domain={[0, 14]}
+                stroke="#d1d5db"
+                label={phAxisLabel}
+              />
               <Tooltip 
                 contentStyle={{ 
-                  backgroundColor: '#1f2937', 
+                  backgroundColor: 'rgba(31, 41, 55, 0.95)', 
                   border: '2px solid #3b82f6', 
                   borderRadius: '12px', 
                   color: '#fff',
-                  padding: '12px',
-                  boxShadow: '0 10px 25px rgba(0,0,0,0.3)'
+                  padding: '14px',
+                  boxShadow: '0 20px 40px rgba(0,0,0,0.4)',
+                  backdropFilter: 'blur(10px)'
                 }}
-                formatter={(value: any, name: any) => {
-                  if (name === '🔵 pH Level' || name === '🔵 pH Level (BOOSTED)') {
-                    return [(value / 7).toFixed(2), name];
-                  }
-                  return typeof value === 'number' ? value.toFixed(2) : value;
-                }}
+                formatter={formatTooltipValue}
+                labelFormatter={formatTooltipLabel}
               />
               <Legend 
                 wrapperStyle={{ paddingTop: '20px', fontSize: '13px', fontWeight: 'bold' }}
+                verticalAlign="bottom"
+                height={30}
               />
-              {selectedParams.includes('pH') && <Area yAxisId="right" type="monotone" dataKey="pH_scaled" stackId="1" stroke="#8b5cf6" strokeWidth={3} fill="url(#colorPH)" name="🔵 pH Level" isAnimationActive={true} filter="url(#glow)" />}
-              {selectedParams.includes('tds') && <Area type="monotone" dataKey="tds" stackId="2" stroke="#3b82f6" strokeWidth={3} fill="url(#colorTDS)" name="🌊 TDS" isAnimationActive={true} filter="url(#glow)" />}
-              {selectedParams.includes('temperature') && <Area type="monotone" dataKey="temperature" stackId="3" stroke="#f97316" strokeWidth={3} fill="url(#colorTemp)" name="🌡️ Temperature" isAnimationActive={true} filter="url(#glow)" />}
+              {selectedParams.includes('pH') && <Area yAxisId="right" type="monotone" dataKey="pH" stroke="#8b5cf6" strokeWidth={3} fill="url(#colorPH)" name="pH Level" isAnimationActive={true} />}
+              {selectedParams.includes('tds') && <Area yAxisId="left" type="monotone" dataKey="tds" stroke="#3b82f6" strokeWidth={3} fill="url(#colorTDS)" name={getParameterLabel('tds')} isAnimationActive={true} />}
+              {selectedParams.includes('temperature') && <Area yAxisId="left" type="monotone" dataKey="temperature" stroke="#f97316" strokeWidth={3} fill="url(#colorTemp)" name={getParameterLabel('temperature')} isAnimationActive={true} />}
+              {selectedParams.includes('turbidity') && <Area yAxisId="left" type="monotone" dataKey="turbidity" stroke="#22d3ee" strokeWidth={3} fill="url(#colorTurbidity)" name={getParameterLabel('turbidity')} isAnimationActive={true} />}
+              {selectedParams.includes('conductivity') && <Area yAxisId="left" type="monotone" dataKey="conductivity" stroke="#4ade80" strokeWidth={3} fill="url(#colorConductivity)" name={getParameterLabel('conductivity')} isAnimationActive={true} />}
             </AreaChart>
           </ResponsiveContainer>
         );
 
       case 'bar':
+        // Show only the latest data point for bar chart
+        const latestData = chartData.length > 0 ? [chartData[chartData.length - 1]] : [];
         return (
           <ResponsiveContainer width="100%" height={chartHeight}>
-            <BarChart data={chartData} margin={commonMargin}>
+            <BarChart data={latestData} margin={commonMargin}>
               <defs>
                 <linearGradient id="barGrad1" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="#a78bfa" stopOpacity={1}/>
@@ -441,20 +578,28 @@ setChartData(formatted);
                   <stop offset="0%" stopColor="#fb923c" stopOpacity={1}/>
                   <stop offset="100%" stopColor="#dc2626" stopOpacity={1}/>
                 </linearGradient>
+                <linearGradient id="barGrad4" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#22d3ee" stopOpacity={1}/>
+                  <stop offset="100%" stopColor="#0891b2" stopOpacity={1}/>
+                </linearGradient>
+                <linearGradient id="barGrad5" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#4ade80" stopOpacity={1}/>
+                  <stop offset="100%" stopColor="#15803d" stopOpacity={1}/>
+                </linearGradient>
                 <filter id="barShadow">
                   <feDropShadow dx="0" dy="2" stdDeviation="3" floodOpacity="0.3"/>
                 </filter>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" strokeOpacity={0.3} />
-              <XAxis dataKey="time" angle={-45} textAnchor="end" height={100} tick={{ fontSize: 12, fill: '#4b5563' }} />
-              <YAxis tick={{ fontSize: 12, fill: '#4b5563' }} yAxisId="left" />
+              <XAxis dataKey="time" tick={{ fontSize: 12, fill: '#4b5563' }} label={timelineAxisLabel} height={90} />
+              <YAxis tick={{ fontSize: 12, fill: '#4b5563' }} yAxisId="left" label={sensorAxisLabel} />
               <YAxis 
                 yAxisId="right" 
                 orientation="right" 
                 tick={{ fontSize: 12, fill: '#a78bfa', fontWeight: '500' }}
                 domain={[0, 14]}
                 tickFormatter={(value) => value.toFixed(1)}
-                label={{ value: 'pH', angle: -90, position: 'insideRight', style: { textAnchor: 'middle', fill: '#a78bfa', fontWeight: 'bold' } }}
+                label={phAxisLabel}
               />
               <Tooltip 
                 contentStyle={{ 
@@ -465,66 +610,22 @@ setChartData(formatted);
                   padding: '12px',
                   boxShadow: '0 10px 25px rgba(0,0,0,0.3)'
                 }}
-                formatter={(value: any, name: any) => {
-                  if (name === '🔵 pH Level' || name === '🔵 pH Level (BOOSTED)') {
-                    return [(value / 7).toFixed(2), name];
-                  }
-                  return typeof value === 'number' ? value.toFixed(2) : value;
-                }}
+                formatter={formatTooltipValue}
+                labelFormatter={formatTooltipLabel}
               />
               <Legend 
                 wrapperStyle={{ paddingTop: '20px', fontSize: '13px', fontWeight: 'bold' }}
               />
-              {selectedParams.includes('pH') && <Bar dataKey="pH" fill="url(#barGrad1)" name="🔵 pH Level" radius={[8, 8, 0, 0]} />}
-              {selectedParams.includes('tds') && <Bar dataKey="tds" fill="url(#barGrad2)" name="🌊 TDS" radius={[8, 8, 0, 0]} />}
-              {selectedParams.includes('temperature') && <Bar dataKey="temperature" fill="url(#barGrad3)" name="🌡️ Temperature" radius={[8, 8, 0, 0]} />}
+              {selectedParams.includes('pH') && <Bar yAxisId="right" dataKey="pH" fill="url(#barGrad1)" name="pH Level" radius={[8, 8, 0, 0]} label={{ position: 'top', fill: '#6b21a8', fontWeight: 'bold', fontSize: 14 }} />}
+              {selectedParams.includes('tds') && <Bar yAxisId="left" dataKey="tds" fill="url(#barGrad2)" name={getParameterLabel('tds')} radius={[8, 8, 0, 0]} label={{ position: 'top', fill: '#1e40af', fontWeight: 'bold', fontSize: 14 }} />}
+              {selectedParams.includes('temperature') && <Bar yAxisId="left" dataKey="temperature" fill="url(#barGrad3)" name={getParameterLabel('temperature')} radius={[8, 8, 0, 0]} label={{ position: 'top', fill: '#92400e', fontWeight: 'bold', fontSize: 14 }} />}
+              {selectedParams.includes('turbidity') && <Bar yAxisId="left" dataKey="turbidity" fill="url(#barGrad4)" name={getParameterLabel('turbidity')} radius={[8, 8, 0, 0]} label={{ position: 'top', fill: '#0c4a6e', fontWeight: 'bold', fontSize: 14 }} />}
+              {selectedParams.includes('conductivity') && <Bar yAxisId="left" dataKey="conductivity" fill="url(#barGrad5)" name={getParameterLabel('conductivity')} radius={[8, 8, 0, 0]} label={{ position: 'top', fill: '#166534', fontWeight: 'bold', fontSize: 14 }} />}
             </BarChart>
           </ResponsiveContainer>
         );
 
-      case 'scatter':
-        return (
-          <ResponsiveContainer width="100%" height={chartHeight}>
-            <ScatterChart data={baseChartData} margin={{ top: 20, right: 20, bottom: 60, left: 60 }}>
-              <defs>
-                <filter id="dotGlow">
-                  <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
-                  <feMerge>
-                    <feMergeNode in="coloredBlur"/>
-                    <feMergeNode in="SourceGraphic"/>
-                  </feMerge>
-                </filter>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" strokeOpacity={0.3} />
-              <XAxis 
-                dataKey="pH" 
-                name="pH" 
-                label={{ value: '🔵 pH Level', position: 'insideBottomRight', offset: -10 }} 
-                tick={{ fontSize: 12, fill: '#4b5563', fontWeight: '500' }} 
-              />
-              <YAxis 
-                dataKey="temperature" 
-                name="Temperature" 
-                label={{ value: '🌡️ Temperature (°C)', angle: -90, position: 'insideLeft' }} 
-                tick={{ fontSize: 12, fill: '#4b5563', fontWeight: '500' }} 
-              />
-              <Tooltip 
-                cursor={{ strokeDasharray: '3 3', stroke: '#a78bfa' }} 
-                contentStyle={{ 
-                  backgroundColor: '#1f2937', 
-                  border: '2px solid #8b5cf6', 
-                  borderRadius: '12px', 
-                  color: '#fff',
-                  padding: '12px',
-                  boxShadow: '0 10px 25px rgba(0,0,0,0.3)',
-                  fontWeight: '600'
-                }}
-                formatter={(value: any) => typeof value === 'number' ? value.toFixed(2) : value}
-              />
-              <Scatter name="pH vs Temperature" data={baseChartData} fill="#a78bfa" shape="circle" filter="url(#dotGlow)" />
-            </ScatterChart>
-          </ResponsiveContainer>
-        );
+
 
       case 'line':
       default:
@@ -554,10 +655,12 @@ setChartData(formatted);
                 textAnchor="end" 
                 height={100} 
                 tick={{ fontSize: 12, fill: '#4b5563', fontWeight: '500' }} 
+                label={timelineAxisLabel}
               />
               <YAxis 
                 tick={{ fontSize: 12, fill: '#4b5563', fontWeight: '500' }} 
                 yAxisId="left"
+                label={sensorAxisLabel}
               />
               <YAxis 
                 yAxisId="right" 
@@ -565,8 +668,8 @@ setChartData(formatted);
                 tick={{ fontSize: 12, fill: '#d8b4fe', fontWeight: '500' }}
                 domain={[0, 14]}
                 tickFormatter={(value) => value.toFixed(1)}
-                label={{ value: 'pH', angle: -90, position: 'insideRight', style: { textAnchor: 'middle', fill: '#d8b4fe', fontWeight: 'bold' } }}
-              />ool
+                label={phAxisLabel}
+              />
               <Tooltip 
                 contentStyle={{ 
                   backgroundColor: '#1f2937', 
@@ -577,36 +680,28 @@ setChartData(formatted);
                   boxShadow: '0 10px 25px rgba(0,0,0,0.3)',
                   fontWeight: '600'
                 }}
-                formatter={(value: any, name: any) => {
-                  if (name.includes('pH')) {
-                    // Convert scaled pH back to original value
-                    const originalPh = typeof value === 'number' ? value / 10 : value;
-                    return [originalPh.toFixed(2), name];
-                  }
-                  return typeof value === 'number' ? value.toFixed(2) : value;
-                }}
-                 
-                labelFormatter={(label) => `Time: ${label}`}
+                formatter={formatTooltipValue}
+                labelFormatter={formatTooltipLabel}
               />
               <Legend 
                 wrapperStyle={{ paddingTop: '20px', fontSize: '13px', fontWeight: 'bold' }}
               />
-              {selectedParams.includes('pH') && <Line yAxisId="right" type="monotone" dataKey="pH_scaled" stroke={phBoost ? "#fbbf24" : "#d8b4fe"} strokeWidth={phBoost ? 10 : 7} dot={{ r: phBoost ? 6 : 4, fill: phBoost ? "#fbbf24" : "#d8b4fe" }} name={phBoost ? "🔵 pH Level (BOOSTED)" : "🔵 pH Level"} isAnimationActive={true} filter={phBoost ? "url(#phGlowBright)" : "url(#lineGlow)"} />}
-              {selectedParams.includes('tds') && <Line type="monotone" dataKey="tds" stroke="#60a5fa" strokeWidth={4} dot={false} name="🌊 TDS" isAnimationActive={true} filter="url(#lineGlow)" />}
-              {selectedParams.includes('temperature') && <Line type="monotone" dataKey="temperature" stroke="#fb923c" strokeWidth={4} dot={false} name="🌡️ Temperature" isAnimationActive={true} filter="url(#lineGlow)" />}
-              {selectedParams.includes('turbidity') && <Line type="monotone" dataKey="turbidity" stroke="#22d3ee" strokeWidth={4} dot={false} name="💧 Turbidity" isAnimationActive={true} filter="url(#lineGlow)" />}
-              {selectedParams.includes('conductivity') && <Line type="monotone" dataKey="conductivity" stroke="#4ade80" strokeWidth={4} dot={false} name="⚡ Conductivity" isAnimationActive={true} filter="url(#lineGlow)" />}
+              {selectedParams.includes('pH') && <Line yAxisId="right" type="monotone" dataKey="pH" stroke={phBoost ? "#fbbf24" : "#d8b4fe"} strokeWidth={phBoost ? 8 : 5} dot={{ r: phBoost ? 6 : 4, fill: phBoost ? "#fbbf24" : "#d8b4fe" }} name="pH Level" isAnimationActive={true} filter={phBoost ? "url(#phGlowBright)" : "url(#lineGlow)"} />}
+              {selectedParams.includes('tds') && <Line yAxisId="left" type="monotone" dataKey="tds" stroke="#60a5fa" strokeWidth={4} dot={false} name={getParameterLabel('tds')} isAnimationActive={true} filter="url(#lineGlow)" />}
+              {selectedParams.includes('temperature') && <Line yAxisId="left" type="monotone" dataKey="temperature" stroke="#fb923c" strokeWidth={4} dot={false} name={getParameterLabel('temperature')} isAnimationActive={true} filter="url(#lineGlow)" />}
+              {selectedParams.includes('turbidity') && <Line yAxisId="left" type="monotone" dataKey="turbidity" stroke="#22d3ee" strokeWidth={4} dot={false} name={getParameterLabel('turbidity')} isAnimationActive={true} filter="url(#lineGlow)" />}
+              {selectedParams.includes('conductivity') && <Line yAxisId="left" type="monotone" dataKey="conductivity" stroke="#4ade80" strokeWidth={4} dot={false} name={getParameterLabel('conductivity')} isAnimationActive={true} filter="url(#lineGlow)" />}
             </LineChart>
           </ResponsiveContainer>
         );
       
       case 'panels':
         const paramDefs = [
-          { key: 'pH', label: 'pH', color: '#a78bfa', lightColor: '#ede9fe', icon: '🔵' },
-          { key: 'tds', label: 'TDS', color: '#60a5fa', lightColor: '#dbeafe', icon: '🌊' },
-          { key: 'temperature', label: 'Temperature', color: '#fb923c', lightColor: '#fed7aa', icon: '🌡️' },
-          { key: 'turbidity', label: 'Turbidity', color: '#22d3ee', lightColor: '#cffafe', icon: '💧' },
-          { key: 'conductivity', label: 'Conductivity', color: '#4ade80', lightColor: '#dcfce7', icon: '⚡' },
+          { key: 'pH', label: 'pH Level', color: '#a78bfa', lightColor: '#ede9fe', icon: '🔵' },
+          { key: 'tds', label: getParameterLabel('tds'), color: '#60a5fa', lightColor: '#dbeafe', icon: '🌊' },
+          { key: 'temperature', label: getParameterLabel('temperature'), color: '#fb923c', lightColor: '#fed7aa', icon: '🌡️' },
+          { key: 'turbidity', label: getParameterLabel('turbidity'), color: '#22d3ee', lightColor: '#cffafe', icon: '💧' },
+          { key: 'conductivity', label: getParameterLabel('conductivity'), color: '#4ade80', lightColor: '#dcfce7', icon: '⚡' },
         ];
         return (
           <div className="grid gap-6 lg:grid-cols-2">
@@ -624,7 +719,7 @@ setChartData(formatted);
                   </div>
                 </div>
                 <ResponsiveContainer width="100%" height={280}>
-                  <LineChart data={baseChartData}>
+                  <LineChart data={baseChartData} margin={{ top: 18, right: 18, left: 34, bottom: 58 }}>
                     <defs>
                       <linearGradient id={`panelGrad${param.key}`} x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stopColor={param.color} stopOpacity={0.3}/>
@@ -639,8 +734,28 @@ setChartData(formatted);
                       </filter>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" strokeOpacity={0.3} />
-                    <XAxis dataKey="time" fontSize={11} tick={{ fill: '#4b5563', fontWeight: '500' }} />
-                    <YAxis fontSize={11} tick={{ fill: '#4b5563', fontWeight: '500' }} />
+                    <XAxis 
+                      dataKey="time" 
+                      fontSize={11} 
+                      tick={{ fill: '#4b5563', fontWeight: '500' }}
+                      label={{
+                        value: 'Sample time',
+                        position: 'insideBottom',
+                        offset: -36,
+                        style: { textAnchor: 'middle' as const, fill: '#374151', fontWeight: 700 },
+                      }}
+                    />
+                    <YAxis 
+                      fontSize={11} 
+                      tick={{ fill: '#4b5563', fontWeight: '500' }}
+                      label={{
+                        value: PARAMETER_DETAILS[param.key]?.axis ?? param.label,
+                        angle: -90,
+                        position: 'insideLeft',
+                        offset: -18,
+                        style: { textAnchor: 'middle' as const, fill: '#374151', fontWeight: 700 },
+                      }}
+                    />
                     <Tooltip 
                       contentStyle={{ 
                         backgroundColor: '#1f2937', 
@@ -652,10 +767,14 @@ setChartData(formatted);
                         fontWeight: '600',
                         boxShadow: '0 10px 25px rgba(0,0,0,0.3)'
                       }}
-                      formatter={(value: any) => typeof value === 'number' ? value.toFixed(2) : value}
-                      labelFormatter={(label) => `Time: ${label}`}
+                      formatter={(value: any) => {
+                        const detail = PARAMETER_DETAILS[param.key];
+                        const formattedValue = typeof value === 'number' ? value.toFixed(2) : value;
+                        return detail ? [`${formattedValue} ${detail.unit}`, detail.label] : formattedValue;
+                      }}
+                      labelFormatter={formatTooltipLabel}
                     />
-                    <Line type="monotone" dataKey={param.key} stroke={param.color} strokeWidth={4} dot={false} isAnimationActive={true} filter={`url(#panelGlow${param.key})`} />
+                    <Line type="monotone" dataKey={param.key} stroke={param.color} strokeWidth={4} dot={false} name={param.label} isAnimationActive={true} filter={`url(#panelGlow${param.key})`} />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
@@ -666,7 +785,7 @@ setChartData(formatted);
   };
 
   return (
-    <Layout title="Reports & Analytics" subtitle="View and analyze comprehensive water quality reports with multiple visualization types">
+    <Layout title="Analytics Dashboard" subtitle="Comprehensive water quality analytics with advanced visualizations">
       {/* Help Modal */}
       {showGuide && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -691,24 +810,12 @@ setChartData(formatted);
                     <span>In-depth analysis of pH, TDS, turbidity, temperature, and conductivity trends over time</span>
                   </li>
                   <li className="flex gap-3">
-                    <span className="text-red-600 font-bold">Safety & Compliance:</span>
-                    <span>Compliance report showing safe percentage and parameter violations with detailed breakdowns</span>
-                  </li>
-                  <li className="flex gap-3">
                     <span className="text-orange-600 font-bold">Trends & Anomalies:</span>
                     <span>Spot unusual patterns, sudden spikes/drops, and drifting baseline values that need attention</span>
                   </li>
                   <li className="flex gap-3">
-                    <span className="text-purple-600 font-bold">Daily Statistics:</span>
-                    <span>Aggregated daily summaries showing min, max, and average values for trend comparison</span>
-                  </li>
-                  <li className="flex gap-3">
-                    <span className="text-teal-600 font-bold">Regulatory Compliance:</span>
-                    <span>Detailed compliance against WHO/EPA standards with specific parameter thresholds</span>
-                  </li>
-                  <li className="flex gap-3">
-                    <span className="text-indigo-600 font-bold">Parameter Comparison:</span>
-                    <span>Analyze relationships and correlations between different parameters for deeper insights</span>
+                    <span className="text-red-600 font-bold">Safety Report:</span>
+                    <span>Unsafe reading counts, safety percentage, and alert-focused monitoring for real field use</span>
                   </li>
                 </ul>
               </div>
@@ -821,44 +928,27 @@ setChartData(formatted);
       )}
 
       {/* Main Controls */}
-      <div className="mb-6 grid gap-4 lg:grid-cols-4">
-        <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4 shadow-sm">
+      <div className="mb-6 grid gap-4 lg:grid-cols-3">
+        <div className="rounded-3xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-sky-50 p-5 shadow-lg dark:border-slate-700/80 dark:from-slate-900 dark:via-slate-900 dark:to-sky-950/20">
           <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">Report Type</label>
           <select
             value={reportType}
             onChange={(e) => setReportType(e.target.value)}
-            className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700/50 px-3 py-2 text-gray-900 dark:text-white focus:border-blue-500 focus:outline-none"
+            className="w-full rounded-2xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700/50 px-3 py-2.5 text-gray-900 dark:text-white focus:border-blue-500 focus:outline-none"
           >
-            <option value="overview">📊 System Overview</option>
-            <option value="quality">💧 Water Quality Analysis</option>
-            <option value="safety">🛡️ Safety & Compliance</option>
-            <option value="trends">📈 Trends & Anomalies</option>
-            <option value="daily">📅 Daily Statistics</option>
-            <option value="compliance">✅ Regulatory Compliance</option>
-            <option value="comparison">🔄 Parameter Comparison</option>
+            {REPORT_TYPES.map((type) => (
+              <option key={type.value} value={type.value}>
+                {type.label}
+              </option>
+            ))}
           </select>
         </div>
 
-        <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4 shadow-sm">
-          <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">Chart Type</label>
-          <select
-            value={chartType}
-            onChange={(e) => setChartType(e.target.value)}
-            className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700/50 px-3 py-2 text-gray-900 dark:text-white focus:border-blue-500 focus:outline-none"
-          >
-            <option value="line">📈 Line Chart</option>
-            <option value="area">📊 Area Chart</option>
-            <option value="bar">📉 Bar Chart</option>
-            <option value="scatter">🔵 Scatter Plot</option>
-            <option value="panels">☰ Panels (one chart per parameter)</option>
-          </select>
-        </div>
-
-        <div className="flex gap-2 items-end">
+        <div className="flex items-end gap-2 rounded-3xl border border-slate-200 bg-gradient-to-br from-white via-violet-50 to-fuchsia-50 p-4 shadow-lg dark:border-slate-700/80 dark:from-slate-900 dark:via-slate-900 dark:to-violet-950/20">
           <button
             onClick={() => setShowGuide(true)}
             title="User Guide"
-            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-purple-600 text-white font-medium hover:bg-purple-700 transition-colors"
+            className="flex items-center gap-2 rounded-2xl bg-gradient-to-r from-violet-600 to-fuchsia-600 px-3 py-2.5 font-medium text-white shadow-md transition-all hover:-translate-y-0.5 hover:shadow-lg"
           >
             <HelpCircle className="h-4 w-4" />
             <span className="hidden sm:inline">Guide</span>
@@ -866,10 +956,10 @@ setChartData(formatted);
 
           <button
             onClick={() => setShowFilters(!showFilters)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+            className={`flex items-center gap-2 rounded-2xl px-4 py-2.5 font-medium transition-all ${
               showFilters
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+                ? 'bg-sky-600 text-white shadow-md'
+                : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
             }`}
           >
             <Filter className="h-4 w-4" />
@@ -878,7 +968,7 @@ setChartData(formatted);
 
           <button
             onClick={() => downloadReport('csv')}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-green-600 text-white font-medium hover:bg-green-700 transition-colors"
+            className="flex items-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-600 to-green-600 px-4 py-2.5 font-medium text-white shadow-md transition-all hover:-translate-y-0.5 hover:shadow-lg"
           >
             <Download className="h-4 w-4" />
             Export
@@ -890,12 +980,12 @@ setChartData(formatted);
       {(() => {
         const info = getReportContent();
         return (
-          <div className="mb-6 rounded-lg border border-blue-200 dark:border-blue-900 bg-blue-50 dark:bg-blue-950 p-4 flex items-start gap-3">
+          <div className="mb-6 rounded-3xl border border-blue-200 dark:border-blue-800 bg-gradient-to-br from-blue-50 via-white to-cyan-50 dark:from-slate-900 dark:via-blue-950/40 dark:to-slate-900 p-5 shadow-lg flex items-start gap-3">
             <span className="text-2xl">{info.icon}</span>
             <div>
               <h3 className="font-semibold text-gray-900 dark:text-white">{info.title}</h3>
-              <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">{info.description}</p>
-              <p className="text-xs text-blue-700 dark:text-blue-300 mt-2 font-medium">💡 {info.guidance}</p>
+              <p className="mt-1 text-sm font-medium text-gray-700 dark:text-slate-200">{info.description}</p>
+              <p className="mt-3 inline-flex rounded-full border border-blue-200 bg-white/90 px-3 py-1 text-xs font-semibold text-blue-700 shadow-sm dark:border-blue-800 dark:bg-slate-900/80 dark:text-blue-300">💡 {info.guidance}</p>
             </div>
           </div>
         );
@@ -905,53 +995,53 @@ setChartData(formatted);
       <div className="mb-12">
         <button
           onClick={() => setShowSafety(!showSafety)}
-          className="w-full flex items-center justify-between bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-900 rounded-lg p-4 hover:bg-red-100 dark:hover:bg-red-900 transition-colors"
+          className="flex w-full items-center justify-between rounded-3xl border border-red-200 bg-gradient-to-r from-red-50 via-white to-rose-50 p-4 shadow-lg transition-colors hover:bg-red-100 dark:border-red-900 dark:from-red-950/40 dark:via-slate-900 dark:to-rose-950/30 dark:hover:bg-red-900"
         >
           <div className="flex items-center gap-3">
             <span className="text-2xl">🛡️</span>
             <div className="text-left">
               <h3 className="font-bold text-red-900 dark:text-red-100">Safety & Normal Ranges</h3>
-              <p className="text-xs text-red-700 dark:text-red-300">Click to expand safe parameter ranges and maintenance tips</p>
+              <p className="text-xs font-medium text-red-700 dark:text-red-200">Click to expand safe parameter ranges and maintenance tips</p>
             </div>
           </div>
           <span className="text-xl">{showSafety ? '▼' : '▶'}</span>
         </button>
 
         {showSafety && (
-          <div className="mt-6 rounded-lg border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950 p-8">
+          <div className="mt-6 rounded-3xl border border-red-200 dark:border-red-900 bg-gradient-to-br from-red-50 via-white to-orange-50 dark:from-red-950/30 dark:via-slate-900 dark:to-orange-950/20 p-8 shadow-lg">
             <div className="grid gap-6 lg:grid-cols-5">
-              <div className="bg-white dark:bg-gray-800 p-6 rounded-lg border border-red-100 dark:border-red-900 shadow-sm hover:shadow-md transition-shadow">
+              <div className="rounded-2xl border border-red-100 bg-white p-6 shadow-md transition-all hover:-translate-y-1 hover:shadow-lg dark:border-red-900 dark:bg-gray-800">
                 <h4 className="font-semibold text-gray-900 dark:text-white mb-3">pH Level</h4>
-                <p className="text-2xl font-bold text-red-600 dark:text-red-400 mb-3">6.5 - 8.5</p>
+                <p className="text-2xl font-bold text-red-600 dark:text-red-400 mb-3">{activeThresholds.pH_min} - {activeThresholds.pH_max}</p>
                 <p className="text-xs text-gray-600 dark:text-gray-400">⚠️ Outside = contamination or imbalance</p>
               </div>
 
-              <div className="bg-white dark:bg-gray-800 p-6 rounded-lg border border-orange-100 dark:border-orange-900 shadow-sm hover:shadow-md transition-shadow">
+              <div className="rounded-2xl border border-orange-100 bg-white p-6 shadow-md transition-all hover:-translate-y-1 hover:shadow-lg dark:border-orange-900 dark:bg-gray-800">
                 <h4 className="font-semibold text-gray-900 dark:text-white mb-3">TDS (ppm)</h4>
-                <p className="text-2xl font-bold text-orange-600 dark:text-orange-400 mb-3">&lt; 500</p>
+                <p className="text-2xl font-bold text-orange-600 dark:text-orange-400 mb-3">&lt; {activeThresholds.tds}</p>
                 <p className="text-xs text-gray-600 dark:text-gray-400">⚠️ Above = too many dissolved solids</p>
               </div>
 
-              <div className="bg-white dark:bg-gray-800 p-6 rounded-lg border border-yellow-100 dark:border-yellow-900 shadow-sm hover:shadow-md transition-shadow">
+              <div className="rounded-2xl border border-yellow-100 bg-white p-6 shadow-md transition-all hover:-translate-y-1 hover:shadow-lg dark:border-yellow-900 dark:bg-gray-800">
                 <h4 className="font-semibold text-gray-900 dark:text-white mb-3">Turbidity (NTU)</h4>
-                <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400 mb-3">&lt; 5.0</p>
+                <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400 mb-3">&lt; {activeThresholds.turbidity}</p>
                 <p className="text-xs text-gray-600 dark:text-gray-400">⚠️ High = sediment detected</p>
               </div>
 
-              <div className="bg-white dark:bg-gray-800 p-6 rounded-lg border border-green-100 dark:border-green-900 shadow-sm hover:shadow-md transition-shadow">
+              <div className="rounded-2xl border border-green-100 bg-white p-6 shadow-md transition-all hover:-translate-y-1 hover:shadow-lg dark:border-green-900 dark:bg-gray-800">
                 <h4 className="font-semibold text-gray-900 dark:text-white mb-3">Temperature (°C)</h4>
-                <p className="text-2xl font-bold text-green-600 dark:text-green-400 mb-3">10 - 25</p>
+                <p className="text-2xl font-bold text-green-600 dark:text-green-400 mb-3">{activeThresholds.temperature_min} - {activeThresholds.temperature_max}</p>
                 <p className="text-xs text-gray-600 dark:text-gray-400">⚠️ Outside = microbial risk</p>
               </div>
 
-              <div className="bg-white dark:bg-gray-800 p-6 rounded-lg border border-cyan-100 dark:border-cyan-900 shadow-sm hover:shadow-md transition-shadow">
+              <div className="rounded-2xl border border-cyan-100 bg-white p-6 shadow-md transition-all hover:-translate-y-1 hover:shadow-lg dark:border-cyan-900 dark:bg-gray-800">
                 <h4 className="font-semibold text-gray-900 dark:text-white mb-3">Conductivity (&micro;S/cm)</h4>
-                <p className="text-2xl font-bold text-cyan-600 dark:text-cyan-400 mb-3">&lt; 1000</p>
+                <p className="text-2xl font-bold text-cyan-600 dark:text-cyan-400 mb-3">&lt; {activeThresholds.conductivity}</p>
                 <p className="text-xs text-gray-600 dark:text-gray-400">⚠️ Mineral content indicator</p>
               </div>
             </div>
 
-            <div className="mt-6 p-4 bg-red-100 dark:bg-red-900/50 border border-red-300 dark:border-red-700 rounded-lg">
+            <div className="mt-6 rounded-2xl border border-red-300 bg-red-100 p-4 shadow-sm dark:border-red-700 dark:bg-red-900/50">
               <p className="text-xs font-semibold text-red-900 dark:text-red-100">
                 🚨 <span className="ml-2">Schedule:</span> Daily checks • Weekly connections review • Monthly sensor cleaning • Quarterly calibration
               </p>
@@ -960,7 +1050,7 @@ setChartData(formatted);
         )}
       </div>
       {showFilters && (
-        <div className="mb-6 rounded-lg border-2 border-blue-300 dark:border-blue-700 bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-950 dark:to-blue-900 p-6 shadow-lg">
+        <div className="mb-6 rounded-3xl border border-blue-300 dark:border-blue-700 bg-gradient-to-br from-blue-50 via-white to-indigo-100 dark:from-blue-950 dark:via-slate-900 dark:to-blue-900 p-6 shadow-xl">
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-lg font-bold text-gray-900 dark:text-white">⚙️ Advanced Filters</h3>
             <button onClick={() => setShowFilters(false)} className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
@@ -981,10 +1071,10 @@ setChartData(formatted);
                 <button
                   key={preset.value}
                   onClick={() => setTimePreset(preset.value)}
-                  className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                  className={`rounded-2xl px-4 py-2.5 font-medium transition-all ${
                     timePreset === preset.value
                       ? 'bg-blue-600 text-white shadow-md'
-                      : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+                      : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
                   }`}
                 >
                   {preset.label}
@@ -1005,10 +1095,10 @@ setChartData(formatted);
                 <button
                   key={option.value}
                   onClick={() => setGranularity(option.value)}
-                  className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                  className={`rounded-2xl px-4 py-2.5 font-medium transition-all ${
                     granularity === option.value
                       ? 'bg-green-600 text-white shadow-md'
-                      : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+                      : 'border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
                   }`}
                 >
                   {option.icon} {option.label}
@@ -1035,7 +1125,7 @@ setChartData(formatted);
           </div>
 
           {/* pH Visibility Boost */}
-          <div className="mb-6 p-4 bg-white dark:bg-gray-800 rounded-lg border border-purple-300 dark:border-purple-700">
+          <div className="mb-6 rounded-2xl border border-purple-300 bg-white p-4 shadow-sm dark:border-purple-700 dark:bg-gray-800">
             <label className="flex items-center gap-3 cursor-pointer">
               <input
                 type="checkbox"
@@ -1058,7 +1148,7 @@ setChartData(formatted);
                   type="datetime-local"
                   value={dateRange.start}
                   onChange={(e) => setDateRange({...dateRange, start: e.target.value})}
-                  className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700/50 px-3 py-2 text-gray-900 dark:text-white focus:border-blue-500 focus:outline-none"
+                  className="w-full rounded-2xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700/50 px-3 py-2 text-gray-900 dark:text-white focus:border-blue-500 focus:outline-none"
                 />
               </div>
               <div>
@@ -1067,7 +1157,7 @@ setChartData(formatted);
                   type="datetime-local"
                   value={dateRange.end}
                   onChange={(e) => setDateRange({...dateRange, end: e.target.value})}
-                  className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700/50 px-3 py-2 text-gray-900 dark:text-white focus:border-blue-500 focus:outline-none"
+                  className="w-full rounded-2xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700/50 px-3 py-2 text-gray-900 dark:text-white focus:border-blue-500 focus:outline-none"
                 />
               </div>
             </div>
@@ -1087,7 +1177,7 @@ setChartData(formatted);
                 <button
                   key={param.key}
                   onClick={() => toggleParam(param.key)}
-                  className={`p-3 rounded-lg border-2 transition-all ${
+                  className={`rounded-2xl border-2 p-3 transition-all ${
                     selectedParams.includes(param.key)
                       ? 'border-blue-600 bg-blue-100 dark:bg-blue-900/50 shadow-md'
                       : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 hover:border-gray-400'
@@ -1115,13 +1205,13 @@ setChartData(formatted);
                 setChartHeight(450);
                 setPhBoost(false);
               }}
-              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              className="rounded-2xl border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
             >
               🔄 Reset All Filters
             </button>
             <button
               onClick={() => setShowFilters(false)}
-              className="ml-auto px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+              className="ml-auto rounded-2xl bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
             >
               Apply & Close
             </button>
@@ -1131,7 +1221,7 @@ setChartData(formatted);
 
       {/* Main Content */}
       {!reportData.summary ? (
-        <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-8 shadow-sm">
+        <div className="rounded-3xl border border-gray-200 dark:border-gray-700 bg-gradient-to-br from-white via-slate-50 to-slate-100 p-8 shadow-lg dark:from-slate-900 dark:via-slate-900 dark:to-slate-800">
           <p className="text-center text-gray-500 dark:text-gray-400">Loading report data...</p>
         </div>
       ) : (
@@ -1150,7 +1240,7 @@ setChartData(formatted);
               };
               const color = colors[key as keyof typeof colors] || colors['Conductivity'];
               return (
-                <div key={key} className="rounded-xl border-2 p-5 shadow-lg hover:shadow-xl transition-all hover:scale-105" style={{
+                <div key={key} className="rounded-3xl border-2 p-5 shadow-lg transition-all hover:-translate-y-1 hover:shadow-xl" style={{
                   backgroundColor: color.light,
                   borderColor: color.bg,
                 }}>
@@ -1215,13 +1305,45 @@ setChartData(formatted);
 
           {/* Chart */}
           {filteredData.length > 0 && (
-            <div className="mt-8 rounded-xl border-2 border-gray-200 dark:border-gray-700 bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-900 p-8 shadow-xl hover:shadow-2xl transition-shadow">
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h2 className="text-2xl font-bold mb-1 text-gray-900 dark:text-white">
-                    {chartType === 'area' ? '📊' : chartType === 'bar' ? '📉' : chartType === 'scatter' ? '🔵' : chartType === 'panels' ? '☰' : '📈'} {chartType.charAt(0).toUpperCase() + chartType.slice(1)} Analysis
+            <div className="mt-8 rounded-2xl border-2 bg-gradient-to-br from-white via-blue-50 to-purple-50 dark:from-gray-800 dark:via-blue-900/20 dark:to-gray-900 p-8 shadow-2xl hover:shadow-3xl transition-all border-blue-200 dark:border-blue-700">
+              <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
+                <div className="flex-1">
+                  <h2 className="text-2xl font-bold mb-2 text-gray-900 dark:text-white flex items-center gap-3">
+                    <span className="text-3xl animate-pulse">{chartType === 'area' ? '📊' : chartType === 'bar' ? '📉' : chartType === 'panels' ? '☰' : '📈'}</span>
+                    {chartType.charAt(0).toUpperCase() + chartType.slice(1)} Analysis
+                    {isRefreshing && <span className="inline-block animate-spin text-2xl">🔄</span>}
                   </h2>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    <span className="inline-block">⏰ Last updated:</span> <span className="font-semibold text-blue-600 dark:text-blue-400">{lastUpdate || 'Loading...'}</span>
+                    <span className="mx-2">•</span>
+                    <span className="inline-block">{filteredData.length} data points</span>
+                  </p>
                 </div>
+                <button
+                  onClick={fetchReportData}
+                  disabled={isRefreshing}
+                  className={`px-4 py-2 rounded-lg font-medium transition-all flex items-center gap-2 text-sm whitespace-nowrap ${ isRefreshing 
+                    ? 'bg-gray-300 dark:bg-gray-600 text-gray-600 dark:text-gray-300 cursor-not-allowed' 
+                    : 'bg-gradient-to-r from-blue-600 to-blue-700 text-white hover:from-blue-700 hover:to-blue-800 hover:shadow-lg'
+                  }`}
+                >
+                  <span className="text-lg">{isRefreshing ? '⏳' : '🔄'}</span>
+                  {isRefreshing ? 'Updating...' : 'Refresh Now'}
+                </button>
+              </div>
+
+              <div className="mb-6 rounded-lg border border-blue-200 dark:border-blue-800 bg-white/80 dark:bg-gray-800/80 p-4 shadow-sm">
+                <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">Chart Type</label>
+                <select
+                  value={chartType}
+                  onChange={(e) => setChartType(e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700/50 px-3 py-2 text-gray-900 dark:text-white focus:border-blue-500 focus:outline-none"
+                >
+                  <option value="line">📈 Line Chart</option>
+                  <option value="area">📊 Area Chart</option>
+                  <option value="bar">📉 Bar Chart</option>
+                  <option value="panels">☰ Panels (one chart per parameter)</option>
+                </select>
               </div>
 
               {/* Chart Parameter Filter */}
@@ -1248,6 +1370,21 @@ setChartData(formatted);
                       {param.label}
                     </button>
                   ))}
+                </div>
+              </div>
+
+              <div className="mb-6 grid gap-3 rounded-lg border border-slate-200 bg-white/90 p-4 text-sm text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200 md:grid-cols-3">
+                <div>
+                  <p className="font-bold text-slate-900 dark:text-white">X-axis</p>
+                  <p>Sample time: when each sensor reading was recorded.</p>
+                </div>
+                <div>
+                  <p className="font-bold text-slate-900 dark:text-white">Left Y-axis</p>
+                  <p>Sensor values using the units shown in the legend and tooltip.</p>
+                </div>
+                <div>
+                  <p className="font-bold text-slate-900 dark:text-white">Right Y-axis</p>
+                  <p>pH level on its real 0-14 scale.</p>
                 </div>
               </div>
 

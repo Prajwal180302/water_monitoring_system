@@ -1,34 +1,38 @@
+import os
+
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
+
 from flask import Blueprint, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from tensorflow.keras.models import load_model
 import numpy as np
 import joblib
+from pathlib import Path
 from app.models.user_model import User
 from app.models.sensor_model import SensorReading
+from app.services.threshold_service import get_or_create_user_settings, get_threshold_ranges
 
 alert_api = Blueprint("alert_api", __name__)
+MODEL_DIR = Path(__file__).resolve().parents[2] / "models"
+MODEL_CANDIDATES = [
+    MODEL_DIR / "lstm_best_water_model.keras",
+    MODEL_DIR / "lstm_best_water_model.h5",
+]
 
 print("Loading ML models...")
 
 # ---- LSTM Model for Prediction ----
 try:
-    lstm_model = load_model("/home/prajwalshingote/water_monitoring/models/lstm_best_water_model.h5", compile=False)
-    lstm_scaler = joblib.load("/home/prajwalshingote/water_monitoring/models/scaler.save")
+    model_path = next(path for path in MODEL_CANDIDATES if path.exists())
+    lstm_model = load_model(model_path, compile=False)
+    lstm_scaler = joblib.load(MODEL_DIR / "scaler.save")
     models_loaded = True
+    print(f"✅ LSTM model loaded successfully from {model_path.name}")
 except Exception as e:
     print(f"⚠️  Warning: Could not load LSTM model: {e}")
     lstm_model = None
     lstm_scaler = None
     models_loaded = False
-
-# ---- WHO Thresholds (WHO Standards) ----
-WHO_LIMITS = {
-    "pH": (6.5, 8.5),              # Safe pH range
-    "TDS": (0, 500),               # Safe: < 300 ppm
-    "Turbidity": (0, 5),           # Safe: < 5 NTU
-    "Conductivity": (0, 150),      # Safe: < 150 µS/cm
-    "Temperature": (15, 25)        # Safe: 15-25°C (reasonable drinking water temp)
-}
 
 # ---- Anomaly Detection Thresholds ----
 ANOMALY_THRESHOLDS = {
@@ -61,6 +65,8 @@ def get_alerts():
         return jsonify({"error": "User not found"}), 404
     
     device_id = user.device_id
+    settings = get_or_create_user_settings(user.id)
+    thresholds = get_threshold_ranges(settings)
 
     # Get last 10 readings for prediction + current reading
     readings = SensorReading.query.filter_by(device_id=device_id)\
@@ -91,7 +97,7 @@ def get_alerts():
     critical_params = []
 
     # ============= CURRENT ALERT (WHO Threshold Check) =============
-    for param, (low, high) in WHO_LIMITS.items():
+    for param, (low, high) in thresholds.items():
         actual_val = actual[param]
         
         if actual_val < low or actual_val > high:
@@ -125,12 +131,12 @@ def get_alerts():
             pred_scaled = lstm_model.predict(X, verbose=0)
             predicted = lstm_scaler.inverse_transform(pred_scaled)[0]
 
-            # Check predicted values against WHO limits
+            # Check predicted values against the user's active thresholds
             for i, param in enumerate(FEATURES):
 
                 if param in critical_params:
                     continue
-                low, high = WHO_LIMITS[param]
+                low, high = thresholds[param]
                 pred_val = float(predicted[i])
                 
                 if pred_val < low or pred_val > high:

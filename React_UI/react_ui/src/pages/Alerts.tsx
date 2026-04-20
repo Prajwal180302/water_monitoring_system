@@ -134,37 +134,68 @@ export function Alerts() {
     info: alerts.filter((a) => a.type === 'info' || a.type === 'success').length,
   };
 
+  const statCards = [
+    {
+      label: 'Total Alerts',
+      value: stats.total,
+      tone: 'border-slate-200 bg-gradient-to-br from-white via-slate-50 to-sky-50 dark:border-slate-700/80 dark:from-slate-900 dark:via-slate-900 dark:to-sky-950/20',
+      text: 'text-slate-900 dark:text-white',
+      subtext: 'text-slate-500 dark:text-slate-400',
+    },
+    {
+      label: 'Critical',
+      value: stats.critical,
+      tone: 'border-rose-200 bg-gradient-to-br from-rose-50 via-white to-red-50 dark:border-rose-900/50 dark:from-rose-950/30 dark:via-slate-900 dark:to-red-950/20',
+      text: 'text-rose-600 dark:text-rose-400',
+      subtext: 'text-rose-700 dark:text-rose-300',
+    },
+    {
+      label: 'Warnings',
+      value: stats.warning,
+      tone: 'border-amber-200 bg-gradient-to-br from-amber-50 via-white to-yellow-50 dark:border-amber-900/50 dark:from-amber-950/30 dark:via-slate-900 dark:to-yellow-950/20',
+      text: 'text-amber-600 dark:text-amber-400',
+      subtext: 'text-amber-700 dark:text-amber-300',
+    },
+    {
+      label: 'Info',
+      value: stats.info,
+      tone: 'border-sky-200 bg-gradient-to-br from-sky-50 via-white to-cyan-50 dark:border-sky-900/50 dark:from-sky-950/30 dark:via-slate-900 dark:to-cyan-950/20',
+      text: 'text-sky-600 dark:text-sky-400',
+      subtext: 'text-sky-700 dark:text-sky-300',
+    },
+  ];
+
   return (
-    <Layout title="Alerts & Notifications" subtitle="Monitor and manage system alerts in real-time">
+    <Layout title="Smart Alert Center" subtitle="Real-time alert monitoring and management in one smart view">
       {/* Stats */}
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-lg border border-gray-200 bg-white dark:bg-gray-800 p-4 dark:border-gray-800 dark:bg-gray-900">
-          <p className="text-sm text-gray-500 dark:text-gray-300">Total Alerts</p>
-          <p className="mt-1 text-2xl font-bold">{stats.total}</p>
-        </div>
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-900 dark:bg-red-950">
-          <p className="text-sm text-red-700 dark:text-red-400">Critical</p>
-          <p className="mt-1 text-2xl font-bold text-red-600 dark:text-red-400">{stats.critical}</p>
-        </div>
-        <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4 dark:border-yellow-900 dark:bg-yellow-950">
-          <p className="text-sm text-yellow-700 dark:text-yellow-400">Warnings</p>
-          <p className="mt-1 text-2xl font-bold text-yellow-600 dark:text-yellow-400">{stats.warning}</p>
-        </div>
-        <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950">
-          <p className="text-sm text-blue-700 dark:text-blue-400">Info</p>
-          <p className="mt-1 text-2xl font-bold text-blue-600 dark:text-blue-400">{stats.info}</p>
-        </div>
+        {statCards.map((card) => (
+          <div key={card.label} className={`relative overflow-hidden rounded-3xl border p-5 shadow-lg transition-all duration-300 hover:-translate-y-1 hover:shadow-xl ${card.tone}`}>
+            <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-white/40 blur-2xl dark:bg-white/5" />
+            <div className="relative">
+              <p className={`text-xs font-semibold uppercase tracking-[0.2em] ${card.subtext}`}>{card.label}</p>
+              <p className={`mt-3 text-3xl font-bold ${card.text}`}>{card.value}</p>
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* Filters and Search */}
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mb-6 rounded-3xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-sky-50 p-5 shadow-lg dark:border-slate-700/80 dark:from-slate-900 dark:via-slate-900 dark:to-sky-950/20">
+        <div className="mb-4 flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-lg font-bold text-slate-900 dark:text-white">Filter and explore live alerts</h3>
+            <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Use quick severity filters, search by location, and export the current view when needed.</p>
+          </div>
+        </div>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap gap-2">
           <button
             onClick={() => setFilterType('all')}
             className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
               filterType === 'all'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300'
+                ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
+                : 'bg-white text-slate-700 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
             }`}
           >
             <Filter className="mr-2 inline-block h-4 w-4" />
@@ -174,8 +205,8 @@ export function Alerts() {
             onClick={() => setFilterType('critical')}
             className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
               filterType === 'critical'
-                ? 'bg-red-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300'
+                ? 'bg-rose-600 text-white'
+                : 'bg-white text-slate-700 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
             }`}
           >
             Critical
@@ -184,8 +215,8 @@ export function Alerts() {
             onClick={() => setFilterType('warning')}
             className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
               filterType === 'warning'
-                ? 'bg-yellow-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300'
+                ? 'bg-amber-500 text-white'
+                : 'bg-white text-slate-700 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
             }`}
           >
             Warning
@@ -194,8 +225,8 @@ export function Alerts() {
             onClick={() => setFilterType('info')}
             className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
               filterType === 'info'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300'
+                ? 'bg-sky-600 text-white'
+                : 'bg-white text-slate-700 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
             }`}
           >
             Info
@@ -204,32 +235,33 @@ export function Alerts() {
 
         <div className="flex gap-2">
           <div className="relative flex-1 sm:w-64">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
               placeholder="Search alerts..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full rounded-lg border border-gray-300 py-2 pl-10 pr-4 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800"
+              className="w-full rounded-2xl border border-slate-300 bg-white py-2.5 pl-10 pr-4 text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
             />
           </div>
           <button
             onClick={exportAlerts}
-            className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+            className="flex items-center gap-2 rounded-2xl bg-gradient-to-r from-sky-600 to-blue-600 px-4 py-2.5 text-sm font-medium text-white shadow-md transition-all hover:-translate-y-0.5 hover:shadow-lg"
           >
             <Download className="h-4 w-4" />
             Export
           </button>
         </div>
       </div>
+      </div>
 
       {/* Alerts List */}
       <div className="space-y-3">
         {filteredAlerts.length === 0 ? (
-          <div className="rounded-lg border border-gray-200 bg-white dark:bg-gray-800 p-12 text-center dark:border-gray-800 dark:bg-gray-900">
-            <CheckCircle className="mx-auto h-12 w-12 text-gray-400" />
-            <p className="mt-4 font-medium text-gray-600 dark:text-gray-400">No alerts found</p>
-            <p className="text-sm text-gray-500 dark:text-gray-300">Try adjusting your filters</p>
+          <div className="rounded-3xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-emerald-50 p-12 text-center shadow-lg dark:border-slate-700/80 dark:from-slate-900 dark:via-slate-900 dark:to-emerald-950/20">
+            <CheckCircle className="mx-auto h-12 w-12 text-emerald-500" />
+            <p className="mt-4 font-semibold text-slate-700 dark:text-slate-200">No alerts found</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400">Try adjusting your filters</p>
           </div>
         ) : (
           filteredAlerts.map((alert) => {
@@ -238,22 +270,23 @@ export function Alerts() {
               <div
                 key={alert.id}
                 onClick={() => setSelectedAlert(alert)}
-                className={`cursor-pointer rounded-lg border p-4 transition-all ${getAlertStyles(alert.type)}`}
+                className={`cursor-pointer rounded-3xl border p-5 shadow-lg transition-all duration-300 hover:-translate-y-1 hover:shadow-xl ${getAlertStyles(alert.type)}`}
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-start gap-3 flex-1 min-w-0">
                     <Icon className={`mt-0.5 h-5 w-5 flex-shrink-0 ${getAlertIconColor(alert.type)}`} />
                     <div className="flex-1 min-w-0">
                       <h3 className="font-semibold text-gray-900 dark:text-white">{alert.message}</h3>
-                      <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
                         <span className="font-medium">{alert.location}</span>
                         <span>•</span>
                         <span>{alert.timestamp}</span>
                         <span>•</span>
-                        <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs font-medium dark:bg-gray-700">
+                        <span className="rounded-full bg-white/80 px-2.5 py-1 text-xs font-medium shadow-sm dark:bg-slate-800/80">
                           {alert.severity} Priority
                         </span>
                       </div>
+                      <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">{alert.description}</p>
                     </div>
                   </div>
                   <button
@@ -261,7 +294,7 @@ export function Alerts() {
                       e.stopPropagation();
                       handleDismiss(alert.id);
                     }}
-                    className="rounded-lg p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700"
+                    className="rounded-xl p-2 transition-colors hover:bg-white/80 dark:hover:bg-slate-800/80"
                   >
                     <X className="h-4 w-4" />
                   </button>
@@ -277,13 +310,14 @@ export function Alerts() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setSelectedAlert(null)}>
           <div className="fixed inset-0 bg-black/50" />
           <div
-            className="relative z-10 w-full max-w-2xl rounded-xl bg-white dark:bg-gray-800 p-6 shadow-2xl dark:bg-gray-900"
+            className="relative z-10 w-full max-w-2xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700/80 dark:bg-slate-900"
             onClick={(e) => e.stopPropagation()}
           >
+            <div className="bg-gradient-to-r from-sky-50 via-white to-rose-50 p-6 dark:from-slate-900 dark:via-slate-900 dark:to-rose-950/20">
             <div className="mb-4 flex items-start justify-between">
               <button
                 onClick={() => setSelectedAlert(null)}
-                className="flex items-center gap-2 rounded-lg px-3 py-2 text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700 transition-colors font-medium"
+                className="flex items-center gap-2 rounded-xl px-3 py-2 font-medium text-gray-600 transition-colors hover:bg-white/80 dark:text-gray-400 dark:hover:bg-slate-800"
               >
                 <ArrowLeft className="h-5 w-5" />
                 Back
@@ -300,40 +334,41 @@ export function Alerts() {
               </div>
               <button
                 onClick={() => setSelectedAlert(null)}
-                className="rounded-lg p-2 hover:bg-gray-100 dark:hover:bg-gray-800"
+                className="rounded-xl p-2 hover:bg-white/80 dark:hover:bg-slate-800"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
+            </div>
 
-            <div className="space-y-4">
-              <div>
+            <div className="space-y-4 p-6">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/70">
                 <p className="text-sm font-medium text-gray-500 dark:text-gray-300">Location</p>
                 <p className="mt-1 text-gray-900 dark:text-white">{selectedAlert.location}</p>
               </div>
 
-              <div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/70">
                 <p className="text-sm font-medium text-gray-500 dark:text-gray-300">Severity</p>
                 <p className="mt-1">
-                  <span className="rounded-full bg-gray-200 px-3 py-1 text-sm font-medium dark:bg-gray-700">
+                  <span className="rounded-full bg-white px-3 py-1 text-sm font-medium shadow-sm dark:bg-slate-700">
                     {selectedAlert.severity} Priority
                   </span>
                 </p>
               </div>
 
-              <div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/70">
                 <p className="text-sm font-medium text-gray-500 dark:text-gray-300">Description</p>
                 <p className="mt-1 text-gray-900 dark:text-white">{selectedAlert.description}</p>
               </div>
 
-              <div className="flex gap-3 border-t border-gray-200 pt-4 dark:border-gray-700">
+              <div className="flex gap-3 border-t border-slate-200 pt-4 dark:border-slate-700">
                 <button
                   onClick={() => handleDismiss(selectedAlert.id)}
-                  className="flex-1 rounded-lg bg-gray-100 px-4 py-2 font-medium text-gray-700 transition-colors hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300"
+                  className="flex-1 rounded-2xl bg-slate-100 px-4 py-2.5 font-medium text-slate-700 transition-colors hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
                 >
                   Dismiss
                 </button>
-                <button className="flex-1 rounded-lg bg-blue-600 px-4 py-2 font-medium text-white transition-colors hover:bg-blue-700">
+                <button className="flex-1 rounded-2xl bg-gradient-to-r from-sky-600 to-blue-600 px-4 py-2.5 font-medium text-white shadow-md transition-all hover:-translate-y-0.5 hover:shadow-lg">
                   Take Action
                 </button>
               </div>

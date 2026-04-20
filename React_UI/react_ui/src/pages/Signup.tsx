@@ -1,13 +1,15 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Droplet, Mail, Lock, User, AlertCircle } from 'lucide-react';
+import axiosInstance from '../api/axiosInstance';
 
 export function Signup() {
   const [name, setName] = useState('');
+  const [deviceId, setDeviceId] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [loading] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   const navigate = useNavigate();
@@ -18,7 +20,7 @@ export function Signup() {
   setError("");
 
   if (!name) {
-    setError("Device ID is required");
+    setError("Name is required");
     return;
   }
 
@@ -28,28 +30,20 @@ export function Signup() {
   }
 
   try {
-    const res = await fetch("http://localhost:5001/api/signup", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        device_id: name ,
-        email,
-        password,
-      }),
+    setLoading(true);
+    await axiosInstance.post("/signup", {
+      name,
+      device_id: deviceId || undefined,
+      email,
+      password,
     });
 
-    const data = await res.json();
-
-    if (res.ok) {
-      alert("Signup successful");
-      navigate("/login");
-    } else {
-      setError(data.error || "Signup failed");
-    }
-  } catch (err) {
-    setError("Server error");
+    alert("Signup successful");
+    navigate("/login");
+  } catch (err: any) {
+    setError(err?.response?.data?.error || "Server error");
+  } finally {
+    setLoading(false);
   }
 };
 
@@ -79,7 +73,7 @@ export function Signup() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                Device ID
+                Full Name
               </label>
               <div className="relative">
                 <User className="absolute left-3 top-3.5 h-5 w-5 text-gray-400 dark:text-gray-500" />
@@ -87,13 +81,33 @@ export function Signup() {
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. DEVICE_101"
+                  placeholder="Enter your full name"
                   required
                   className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700/50 py-3 pl-10 pr-4 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 transition-all"
                 />
 
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Enter your IoT device ID (provided with your sensor)
+                  This name will be saved to your profile
+                </p>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Device ID
+              </label>
+              <div className="relative">
+                <User className="absolute left-3 top-3.5 h-5 w-5 text-gray-400 dark:text-gray-500" />
+                <input
+                  type="text"
+                  value={deviceId}
+                  onChange={(e) => setDeviceId(e.target.value)}
+                  placeholder="e.g. DEVICE_101"
+                  className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700/50 py-3 pl-10 pr-4 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 transition-all"
+                />
+
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Optional: enter your IoT device ID if available
                 </p>
               </div>
             </div>

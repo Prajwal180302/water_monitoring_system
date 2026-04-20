@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
+import { THEME_STORAGE_KEY } from '../utils/appSettings';
 
 interface ThemeContextType {
   darkMode: boolean;
@@ -13,7 +14,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   // Load theme on mount
   useEffect(() => {
-    const saved = localStorage.getItem('theme');
+    const saved = localStorage.getItem(THEME_STORAGE_KEY);
     if (saved === 'dark') {
       setDarkMode(true);
       document.documentElement.classList.add('dark');
@@ -24,10 +25,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (darkMode) {
       document.documentElement.classList.add('dark');
-      localStorage.setItem('theme', 'dark');
+      localStorage.setItem(THEME_STORAGE_KEY, 'dark');
     } else {
       document.documentElement.classList.remove('dark');
-      localStorage.setItem('theme', 'light');
+      localStorage.setItem(THEME_STORAGE_KEY, 'light');
     }
   }, [darkMode]);
 

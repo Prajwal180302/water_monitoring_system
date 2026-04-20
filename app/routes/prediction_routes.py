@@ -1,21 +1,32 @@
+import os
+
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
+
 from flask import Blueprint, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from tensorflow.keras.models import load_model
 import numpy as np
 import joblib
+from pathlib import Path
 from app.models.user_model import User
 from app.models.sensor_model import SensorReading
 
 prediction_api = Blueprint("prediction_api", __name__)
+MODEL_DIR = Path(__file__).resolve().parents[2] / "models"
+MODEL_CANDIDATES = [
+    MODEL_DIR / "lstm_best_water_model.keras",
+    MODEL_DIR / "lstm_best_water_model.h5",
+]
 
 print("Loading LSTM prediction model...")
 
 # ---- Load LSTM Model ----
 try:
-    lstm_model = load_model("/home/prajwalshingote/water_monitoring/models/lstm_best_water_model.h5", compile=False)
-    lstm_scaler = joblib.load("/home/prajwalshingote/water_monitoring/models/scaler.save")
+    model_path = next(path for path in MODEL_CANDIDATES if path.exists())
+    lstm_model = load_model(model_path, compile=False)
+    lstm_scaler = joblib.load(MODEL_DIR / "scaler.save")
     model_loaded = True
-    print("✅ LSTM model loaded successfully")
+    print(f"✅ LSTM model loaded successfully from {model_path.name}")
 except Exception as e:
     print(f"❌ Error loading LSTM model: {e}")
     lstm_model = None

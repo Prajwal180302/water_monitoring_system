@@ -1,3 +1,9 @@
+import os
+
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
+if os.getenv("USE_GPU", "true").lower() in {"0", "false", "no"}:
+    os.environ.setdefault("CUDA_VISIBLE_DEVICES", "-1")
+
 from flask import Flask
 from app.extensions import db, jwt
 from app.config import Config

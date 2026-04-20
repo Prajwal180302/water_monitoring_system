@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import { ThemeProvider } from "./context/ThemeContext";
+import { AppSettingsProvider } from "./context/AppSettingsContext";
 import Dashboard from "./pages/Dashboard";
 import { Alerts } from "./pages/Alerts";
 import { Prediction } from "./pages/Prediction";
@@ -13,7 +14,8 @@ function App() {
 
   return (
     <ThemeProvider>
-      <Routes>
+      <AppSettingsProvider>
+        <Routes>
 
         <Route
           path="/"
@@ -59,7 +61,8 @@ function App() {
           element={token ? <Settings /> : <Navigate to="/login" />}
         />
 
-      </Routes>
+        </Routes>
+      </AppSettingsProvider>
     </ThemeProvider>
   );
 }

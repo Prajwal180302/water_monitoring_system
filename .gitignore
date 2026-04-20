@@ -1,5 +1,7 @@
 # Python
 venv/
+env/
+.venv/
 instance/
 __pycache__/
 *.pyc
@@ -7,36 +9,79 @@ __pycache__/
 *.pyd
 *.sqlite3
 *.db
+*.egg-info/
+.pytest_cache/
 
 # Virtualenv / env files
 .env
 .env.local
 .env.*.local
+.env.production
 
 # Logs
 *.log
+logs/
 
 # Editor / OS
 .vscode/
 .idea/
 .DS_Store
+.AppleDouble
+.LSOverride
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
 
 # Node / React
 React_UI/react_ui/node_modules/
 React_UI/react_ui/dist/
 React_UI/react_ui/.vite/
 React_UI/react_ui/.turbo/
+React_UI/react_ui/build/
 
 # Build outputs
 build/
 dist/
+*.egg-info/
 
-# Models and large artifacts (consider Git LFS)
+# Models and large artifacts
 models/
-instance/models/
+instance/
 *.h5
 *.save
 *.pkl
+*.pickle
+*.joblib
 
-# Misc
-coverage/
+# IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker volumes and local data
+db_data/
+.docker/
+postgres_data/
+
+# Data files (unused)
+data/exported_data.csv
+data/final_clean_timeseries.csv
+data/water_potability.csv
+
+# Development utilities (training scripts)
+app/train_lstm.py
+app/synthetic_timeseries_dataset.csv
+
+# Frontend build
+React_UI/react_ui/.env.local
+React_UI/react_ui/.env
+
+# csvdata files
+data/*.csv

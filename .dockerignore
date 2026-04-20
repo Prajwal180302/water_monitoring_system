@@ -1,0 +1,14 @@
+.git
+.gitignore
+.codex
+.vscode
+.vite
+venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.log
+data
+React_UI/react_ui/node_modules
+React_UI/react_ui/dist

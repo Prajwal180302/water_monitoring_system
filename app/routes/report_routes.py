@@ -2,17 +2,9 @@ from flask import Blueprint, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.models.user_model import User
 from app.models.sensor_model import SensorReading
+from app.services.threshold_service import get_or_create_user_settings, get_threshold_ranges
 
 report_api = Blueprint("report_api", __name__)
-
-# WHO Safe Ranges for calculations
-WHO_LIMITS = {
-    "pH": (6.5, 8.5),
-    "TDS": (0, 300),
-    "Turbidity": (0, 1),
-    "Conductivity": (0, 150),
-    "Temperature": (15, 25)
-}
 
 
 @report_api.route("/reports", methods=["GET"])
@@ -33,6 +25,8 @@ def get_reports():
         return jsonify({"error": "User not found"}), 404
     
     device_id = user.device_id
+    settings = get_or_create_user_settings(user.id)
+    thresholds = get_threshold_ranges(settings)
 
     # Get last 100 readings for report
     readings = SensorReading.query.filter_by(device_id=device_id)\
@@ -62,7 +56,7 @@ def get_reports():
             "avg": round(sum(temperatures) / len(temperatures), 2),
             "min": round(min(temperatures), 2),
             "max": round(max(temperatures), 2),
-            "safe_range": WHO_LIMITS["Temperature"]
+            "safe_range": thresholds["Temperature"]
         },
         
         # pH
@@ -70,7 +64,7 @@ def get_reports():
             "avg": round(sum(phs) / len(phs), 2),
             "min": round(min(phs), 2),
             "max": round(max(phs), 2),
-            "safe_range": WHO_LIMITS["pH"]
+            "safe_range": thresholds["pH"]
         },
         
         # TDS
@@ -78,7 +72,7 @@ def get_reports():
             "avg": round(sum(tdss) / len(tdss), 2),
             "min": round(min(tdss), 2),
             "max": round(max(tdss), 2),
-            "safe_range": WHO_LIMITS["TDS"]
+            "safe_range": thresholds["TDS"]
         },
         
         # Turbidity
@@ -86,7 +80,7 @@ def get_reports():
             "avg": round(sum(turbidities) / len(turbidities), 2),
             "min": round(min(turbidities), 2),
             "max": round(max(turbidities), 2),
-            "safe_range": WHO_LIMITS["Turbidity"]
+            "safe_range": thresholds["Turbidity"]
         },
         
         # Conductivity
@@ -94,17 +88,17 @@ def get_reports():
             "avg": round(sum(conductivities) / len(conductivities), 2),
             "min": round(min(conductivities), 2),
             "max": round(max(conductivities), 2),
-            "safe_range": WHO_LIMITS["Conductivity"]
+            "safe_range": thresholds["Conductivity"]
         }
     }
 
     # ============= SAFETY METRICS =============
     safe_readings = sum(1 for r in readings if (
-        WHO_LIMITS["Temperature"][0] <= r.temperature <= WHO_LIMITS["Temperature"][1] and
-        WHO_LIMITS["pH"][0] <= r.pH <= WHO_LIMITS["pH"][1] and
-        r.tds <= WHO_LIMITS["TDS"][1] and
-        r.turbidity <= WHO_LIMITS["Turbidity"][1] and
-        WHO_LIMITS["Conductivity"][0] <= r.conductivity <= WHO_LIMITS["Conductivity"][1]
+        thresholds["Temperature"][0] <= r.temperature <= thresholds["Temperature"][1] and
+        thresholds["pH"][0] <= r.pH <= thresholds["pH"][1] and
+        r.tds <= thresholds["TDS"][1] and
+        r.turbidity <= thresholds["Turbidity"][1] and
+        thresholds["Conductivity"][0] <= r.conductivity <= thresholds["Conductivity"][1]
     ))
     
     unsafe_readings = len(readings) - safe_readings
@@ -117,11 +111,11 @@ def get_reports():
         
         # Parameter-wise violations
         "violations_by_parameter": {
-            "pH_violations": sum(1 for r in readings if r.pH < WHO_LIMITS["pH"][0] or r.pH > WHO_LIMITS["pH"][1]),
-            "TDS_violations": sum(1 for r in readings if r.tds > WHO_LIMITS["TDS"][1]),
-            "Turbidity_violations": sum(1 for r in readings if r.turbidity > WHO_LIMITS["Turbidity"][1]),
-            "Temperature_violations": sum(1 for r in readings if r.temperature < WHO_LIMITS["Temperature"][0] or r.temperature > WHO_LIMITS["Temperature"][1]),
-            "Conductivity_violations": sum(1 for r in readings if r.conductivity < WHO_LIMITS["Conductivity"][0] or r.conductivity > WHO_LIMITS["Conductivity"][1])
+            "pH_violations": sum(1 for r in readings if r.pH < thresholds["pH"][0] or r.pH > thresholds["pH"][1]),
+            "TDS_violations": sum(1 for r in readings if r.tds > thresholds["TDS"][1]),
+            "Turbidity_violations": sum(1 for r in readings if r.turbidity > thresholds["Turbidity"][1]),
+            "Temperature_violations": sum(1 for r in readings if r.temperature < thresholds["Temperature"][0] or r.temperature > thresholds["Temperature"][1]),
+            "Conductivity_violations": sum(1 for r in readings if r.conductivity < thresholds["Conductivity"][0] or r.conductivity > thresholds["Conductivity"][1])
         }
     }
 
@@ -130,6 +124,7 @@ def get_reports():
 
     return jsonify({
         "device_id": device_id,
+        "thresholds": settings.to_dict(),
         "summary": summary,
         "alerts": alerts,
         "data": data
