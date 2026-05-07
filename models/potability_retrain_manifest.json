@@ -1,0 +1,68 @@
+{
+  "trained_at": "2026-04-20T12:31:00.066681",
+  "dataset": "/app/water_potability.csv",
+  "source_columns_used": [
+    "ph",
+    "Solids",
+    "Conductivity",
+    "Turbidity"
+  ],
+  "live_feature_names": [
+    "ph",
+    "tds",
+    "conductivity",
+    "turbidity"
+  ],
+  "rows_used": 3276,
+  "label_counts": {
+    "0": 1998,
+    "1": 1278
+  },
+  "missing_source_values": {
+    "ph": 491,
+    "Solids": 0,
+    "Conductivity": 0,
+    "Turbidity": 0
+  },
+  "artifacts_updated": [
+    "rf_water_potability_model.pkl",
+    "rf_scaler.pkl",
+    "rf_imputer.pkl"
+  ],
+  "metrics": {
+    "accuracy": 0.5350609756097561,
+    "f1": 0.36853002070393376,
+    "classification_report": {
+      "0": {
+        "precision": 0.6107226107226107,
+        "recall": 0.655,
+        "f1-score": 0.632086851628468,
+        "support": 400.0
+      },
+      "1": {
+        "precision": 0.3920704845814978,
+        "recall": 0.34765625,
+        "f1-score": 0.36853002070393376,
+        "support": 256.0
+      },
+      "accuracy": 0.5350609756097561,
+      "macro avg": {
+        "precision": 0.5013965476520542,
+        "recall": 0.501328125,
+        "f1-score": 0.5003084361662009,
+        "support": 656.0
+      },
+      "weighted avg": {
+        "precision": 0.5253949517407129,
+        "recall": 0.5350609756097561,
+        "f1-score": 0.5292354054140156,
+        "support": 656.0
+      }
+    }
+  },
+  "notes": [
+    "This potability model uses only features shared with the live monitoring system.",
+    "Temperature is intentionally excluded because the uploaded labeled dataset does not contain it.",
+    "Solids is mapped to live TDS for inference compatibility."
+  ]
+}

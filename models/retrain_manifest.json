@@ -1,0 +1,37 @@
+{
+  "trained_at": "2026-04-20T12:21:54.503883",
+  "database": "/app/instance/database.db",
+  "window_size": 10,
+  "features": [
+    "pH",
+    "tds",
+    "turbidity",
+    "conductivity",
+    "temperature"
+  ],
+  "devices_used": [
+    "DEVICE_001",
+    "DEVICE_002",
+    "DEVICE_003"
+  ],
+  "readings_used": 3000,
+  "device_reading_counts": {
+    "DEVICE_001": 1000,
+    "DEVICE_002": 1000,
+    "DEVICE_003": 1000
+  },
+  "artifacts_updated": [
+    "lstm_best_water_model.keras",
+    "lstm_best_water_model.h5",
+    "scaler.save"
+  ],
+  "validation": {
+    "loss": 0.0062772538512945175,
+    "mae": 0.04181499034166336,
+    "epochs_ran": 40
+  },
+  "notes": [
+    "This project currently loads only the LSTM model and scaler for prediction and alerts.",
+    "Random-forest potability artifacts were not retrained because the local SQLite data does not contain potability labels."
+  ]
+}

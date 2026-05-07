@@ -47,8 +47,7 @@ build/
 dist/
 *.egg-info/
 
-# Models and large artifacts
-models/
+
 instance/
 *.h5
 *.save
@@ -84,4 +83,5 @@ React_UI/react_ui/.env.local
 React_UI/react_ui/.env
 
 # csvdata files
-data/*.csv
+data/*.csv11
+.codex
