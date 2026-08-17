@@ -197,7 +197,7 @@ export function Reports() {
     // Apply time preset
     if (timePreset !== 'all') {
       const now = new Date();
-      let cutoffDate = new Date();
+      const cutoffDate = new Date();
       
       switch(timePreset) {
         case '24h':
