@@ -1,10 +1,11 @@
 import bcrypt
 import re
-from flask import Blueprint, request, jsonify
-from app.services.auth_service import create_user, login_user, reset_user_password
+from flask import Blueprint, current_app, request, jsonify
+from app.services.auth_service import create_user, login_user
+from app.services.password_reset_service import request_reset, reset_password
 from app.services.user_service import get_all_users_display, update_user_profile
 from app.models.user_model import User
-from app.extensions import db
+from app.extensions import db, limiter
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
 auth_bp = Blueprint("auth", __name__)
@@ -20,8 +21,9 @@ def validate_phone(phone):
 
 # -------- SIGNUP --------
 @auth_bp.route("/signup", methods=["POST"])
+@limiter.limit("5 per minute")
 def signup():
-    data = request.get_json()
+    data = request.get_json() or {}
 
     name = (data.get("name") or "").strip()
     email = data.get("email")
@@ -30,6 +32,10 @@ def signup():
 
     if not name or not email or not password:
         return jsonify({"error": "All fields required"}), 400
+    if not re.match(email_pattern, email):
+        return jsonify({"error": "Enter a valid email address"}), 400
+    if len(password) < 8:
+        return jsonify({"error": "Password must be at least 8 characters"}), 400
 
     user = create_user(name, email, password, device_id)
 
@@ -46,8 +52,9 @@ def signup():
 
 # -------- LOGIN --------
 @auth_bp.route("/login", methods=["POST"])
+@limiter.limit("10 per minute")
 def login():
-    data = request.get_json()
+    data = request.get_json() or {}
 
     email = data.get("email")
     password = data.get("password")
@@ -68,23 +75,29 @@ def login():
 
 
 @auth_bp.route("/forgot-password", methods=["POST"])
+@limiter.limit("3 per hour")
 def forgot_password():
     data = request.get_json() or {}
+    email = (data.get("email") or "").strip().lower()
+    if email and re.match(email_pattern, email):
+        try:
+            request_reset(email)
+        except Exception:
+            current_app.logger.exception("Password reset email failed")
+    return jsonify({"message": "If that email is registered, a reset link has been sent."}), 200
 
-    identifier = (data.get("email") or data.get("device_id") or "").strip()
-    new_password = data.get("new_password") or ""
 
-    if not identifier or not new_password:
-        return jsonify({"error": "Email or device ID and new password are required"}), 400
-
-    if len(new_password) < 8:
+@auth_bp.route("/reset-password", methods=["POST"])
+@limiter.limit("5 per hour")
+def complete_password_reset():
+    data = request.get_json() or {}
+    token = data.get("token") or ""
+    password = data.get("new_password") or ""
+    if len(password) < 8:
         return jsonify({"error": "Password must be at least 8 characters"}), 400
-
-    user = reset_user_password(identifier, new_password)
-    if not user:
-        return jsonify({"error": "No user found for that email or device ID"}), 404
-
-    return jsonify({"message": "Password reset successfully"}), 200
+    if not reset_password(token, password):
+        return jsonify({"error": "This reset link is invalid or expired."}), 400
+    return jsonify({"message": "Password reset successfully. Please log in."}), 200
 
 
 # -------- PROFILE --------

@@ -8,6 +8,7 @@ import { Reports } from "./pages/Reports";
 import { Settings } from "./pages/Settings";
 import Login from "./pages/Login";
 import { Signup } from "./pages/Signup";
+import ResetPassword from "./pages/ResetPassword";
 
 function App() {
   const token = localStorage.getItem("token");
@@ -34,6 +35,7 @@ function App() {
           path="/signup"
           element={token ? <Navigate to="/dashboard" /> : <Signup />}
         />
+        <Route path="/reset-password" element={<ResetPassword />} />
 
         {/* Protected Routes */}
         <Route

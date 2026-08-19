@@ -100,11 +100,9 @@ def generate_device_id(name: str, email: str) -> str:
     base = _slugify_device_id(name or email.split("@")[0])
     candidate = base
     counter = 1
-
     while User.query.filter_by(device_id=candidate).first():
         counter += 1
         candidate = f"{base}_{counter}"
-
     return candidate
 
 

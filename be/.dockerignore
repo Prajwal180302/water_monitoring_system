@@ -1,0 +1,16 @@
+# The backend build context is ./be, so this file must live in ./be.
+# SQLite is a runtime volume and must never be baked into a deployable image.
+instance/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+
+# Development-only data and scripts are not required to serve the API.
+data/
+app/synthetic_timeseries_dataset.csv
+
+# Local tooling and secrets
+.env
+.venv/
+venv/
+.pytest_cache/

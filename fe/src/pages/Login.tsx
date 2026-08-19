@@ -12,7 +12,6 @@ function Login() {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
   const [resetMode, setResetMode] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -56,21 +55,12 @@ function Login() {
     setError('');
     setSuccess('');
 
-    if (newPassword.length < 8) {
-      setError('Password must be at least 8 characters');
-      return;
-    }
-
     try {
       setLoading(true);
-      await axiosInstance.post('/forgot-password', {
-        email,
-        new_password: newPassword,
-      });
+      await axiosInstance.post('/forgot-password', { email });
 
-      setSuccess(t('resetPasswordSuccess'));
+      setSuccess('If your email is registered, a reset link has been sent.');
       setPassword('');
-      setNewPassword('');
       setResetMode(false);
     } catch (err) {
       console.error(err);
@@ -129,23 +119,23 @@ function Login() {
               </div>
             </div>
 
-            <div>
+            {!resetMode && <div>
               <label htmlFor="password" className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                {resetMode ? t('newPassword') : t('password')}
+                  {t('password')}
               </label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
                 <input
                   id="password"
                   type="password"
-                  value={resetMode ? newPassword : password}
-                  onChange={(e) => (resetMode ? setNewPassword(e.target.value) : setPassword(e.target.value))}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   required
                   className="w-full rounded-lg border border-gray-300 bg-white py-3 pl-10 pr-4 text-gray-900 placeholder-gray-400 transition-all focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700/50 dark:text-white dark:placeholder-gray-500 dark:focus:ring-blue-400"
                 />
               </div>
-            </div>
+            </div>}
 
             {!resetMode && (
               <div className="flex items-center justify-between text-sm">
@@ -181,7 +171,6 @@ function Login() {
                 onClick={() => {
                   setResetMode(false);
                   setError('');
-                  setNewPassword('');
                 }}
                 className="w-full rounded-lg border border-gray-300 bg-white py-3 font-semibold text-gray-700 transition-all hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
               >

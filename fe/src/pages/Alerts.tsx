@@ -11,6 +11,12 @@ type Alert = {
   timestamp: string;
 };
 
+type AlertApiResponse = Partial<Alert> & {
+  parameter?: string;
+  time?: string;
+  severity?: string;
+};
+
 export function Alerts() {
   const [alerts, setAlerts] = useState<(Alert & { description: string; severity: string })[]>([]);
   const [selectedAlert, setSelectedAlert] = useState<(Alert & { description: string; severity: string }) | null>(null);
@@ -28,12 +34,25 @@ export function Alerts() {
         return;
       }
       
-      const alertsWithDetails = alertsData.map((alert: Alert, index: number) => ({
-        ...alert,
-        id: alert.id || `alert-${index}`,
-        description: alert.message,
-        severity: alert.type
-      }));
+      const alertsWithDetails = alertsData.map((alert: AlertApiResponse, index: number) => {
+        // The API returns `parameter` and `time`; normalize those fields for
+        // the UI so searching can never call toLowerCase on undefined.
+        const type: Alert['type'] =
+          alert.type === 'critical' || alert.type === 'warning' || alert.type === 'success'
+            ? alert.type
+            : 'info';
+        const message = typeof alert.message === 'string' ? alert.message : 'Water-quality alert';
+
+        return {
+          id: String(alert.id ?? `alert-${index}`),
+          type,
+          message,
+          location: alert.location || alert.parameter || 'Water monitoring device',
+          timestamp: alert.timestamp || alert.time || 'Now',
+          description: message,
+          severity: alert.severity || type,
+        };
+      });
 
       setAlerts(alertsWithDetails);
 
